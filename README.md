@@ -1,2 +1,3 @@
 # DeepGPT
-This My First GPT
+This My First AI Tool MVP
+
