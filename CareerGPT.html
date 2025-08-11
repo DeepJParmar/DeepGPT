@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareerAI | Find Your Path</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom styles for transitions and animations */
+        .step {
+            display: none;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        .step.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .interest-tag {
+            transition: all 0.2s ease;
+        }
+        .interest-tag.selected {
+            background-color: #4f46e5; /* indigo-600 */
+            color: white;
+            transform: scale(1.05);
+        }
+        .loader {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #4f46e5; /* Indigo */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+
+<!-- Login Page -->
+<div id="login-page" class="w-full max-w-md p-8 space-y-6 bg-white rounded-lg shadow-md">
+    <div class="text-center">
+        <h1 class="text-3xl font-bold text-gray-800">Create your account</h1>
+    </div>
+    <div class="space-y-4">
+        <div>
+            <label for="email" class="text-sm font-medium text-gray-700">Email address</label>
+            <input id="email" name="email" type="email" autocomplete="email" required class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="john@example.com">
+        </div>
+        <div>
+            <label for="password" class="text-sm font-medium text-gray-700">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required class="w-full px-3 py-2 mt-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" placeholder="********">
+        </div>
+    </div>
+    <div>
+        <button id="login-btn" class="w-full px-4 py-2 text-white bg-green-600 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">Continue</button>
+    </div>
+    <p class="text-sm text-center text-gray-600">
+        Don't have an account? <a href="#" id="signup-link" class="font-medium text-green-600 hover:text-green-500">Sign up</a>
+    </p>
+     <div id="auth-error" class="text-red-500 text-sm text-center"></div>
+</div>
+
+// Firebase Imports
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { 
+    getAuth, 
+    createUserWithEmailAndPassword, 
+    signInWithEmailAndPassword, 
+    onAuthStateChanged, 
+    signOut 
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+  import { getFirestore, setDoc, doc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+// IMPORTANT: Replace with your actual Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+
+const firebaseConfig = {
+    apiKey: "AIzaSyC_Sz9FtmMeeJH4dsdItiNGltRC2J2fU6Y",
+    authDomain: "careerai-2af8b.firebaseapp.com",
+    projectId: "careerai-2af8b",
+    storageBucket: "careerai-2af8b.appspot.com",
+    messagingSenderId: "1056685102122",
+    appId: "1:1056685102122:web:cc3799dd87afb36a11df53",
+    measurementId: "G-XB74EJDKHH"
+};
+
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// Page Elements
+const loginPage = document.getElementById('login-page');
+const appPage = document.getElementById('app-page');
+const loginBtn = document.getElementById('login-btn');
+const signupLink = document.getElementById('signup-link');
+const logoutBtn = document.getElementById('logout-btn');
+const emailInput = document.getElementById('email');
+const passwordInput = document.getElementById('password');
+const authError = document.getElementById('auth-error');
+const getAdviceBtn = document.getElementById('get-advice-btn');
+const chatContainer = document.getElementById('chat-container');
+const userIdDisplay = document.getElementById('user-id-display');
+
+// State
+let isLogin = true;
+
+// --- Authentication ---
+onAuthStateChanged(auth, user => {
+    if (user) {
+        loginPage.classList.add('hidden');
+        appPage.classList.remove('hidden');
+        userIdDisplay.textContent = `User: ${user.email}`;
+        loadInitialMessage(user.uid);
+    } else {
+        loginPage.classList.remove('hidden');
+        appPage.classList.add('hidden');
+         userIdDisplay.textContent = '';
+    }
+});
+
+function updateForm() {
+    loginBtn.textContent = isLogin ? 'Continue' : 'Sign Up';
+    signupLink.innerHTML = isLogin ? `Don't have an account? <a href="#" class="font-medium text-green-600 hover:text-green-500">Sign up</a>` : `Already have an account? <a href="#" class="font-medium text-green-600 hover:text-green-500">Log in</a>`;
+    authError.textContent = '';
+}
+
+signupLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    isLogin = !isLogin;
+    updateForm();
+});
+
+loginBtn.addEventListener('click', async () => {
+    const email = emailInput.value;
+    const password = passwordInput.value;
+    authError.textContent = '';
+
+    if (!email || !password) {
+        authError.textContent = 'Please enter both email and password.';
+        return;
+    }
+
+    try {
+        if (isLogin) {
+            await signInWithEmailAndPassword(auth, email, password);
+        } else {
+            await createUserWithEmailAndPassword(auth, email, password);
+        }
+    } catch (error) {
+        console.error("Authentication Error:", error);
+        authError.textContent = error.message;
+    }
+});
+
+logoutBtn.addEventListener('click', () => {
+    signOut(auth);
+});
+
+<body class="bg-gray-50 text-gray-800 antialiased">
+
+    <div class="container mx-auto px-4 py-8 md:py-12 max-w-4xl">
+        
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">Find Your<span class="text-indigo-600">Future</span></h1>
+            <p class="mt-3 text-lg text-gray-600">Answer a few questions to get personalized career guidance from AI.</p>
+        </header>
+
+        <main id="guidance-app" class="bg-white p-6 md:p-10 rounded-2xl shadow-lg">
+
+            <!-- Progress Bar -->
+            <div id="progress-container" class="mb-8">
+                <div class="relative pt-1">
+                    <div class="flex mb-2 items-center justify-between">
+                        <div>
+                            <span id="progress-text" class="text-xs font-semibold inline-block py-1 px-2 uppercase rounded-full text-indigo-600 bg-indigo-200">
+                                Step 1 of 4
+                            </span>
+                        </div>
+                    </div>
+                    <div class="overflow-hidden h-2 mb-4 text-xs flex rounded bg-indigo-200">
+                        <div id="progress-bar" style="width:25%" class="shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center bg-indigo-600 transition-all duration-500"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form Steps -->
+            <form id="guidance-form">
+                <!-- Step 1: Welcome -->
+                <div id="step-1" class="step active">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-2">Welcome! Let's Get Started</h2>
+                    <p class="text-gray-600 mb-6">This quick process will help us understand you better. Be honest with your answers for the best results. Your future is bright, and we're here to help you navigate it.</p>
+                    <div class="text-right">
+                        <button type="button" class="next-btn bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">
+                            Start &rarr;
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 2: Interests -->
+                <div id="step-2" class="step">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-2">What do you love to do?</h2>
+                    <p class="text-gray-600 mb-6">Select all the activities and topics that genuinely excite you. Don't overthink it!</p>
+                    <div id="interests-container" class="flex flex-wrap gap-3">
+                        <!-- Interests will be populated by JS -->
+                    </div>
+                    <div class="flex justify-between mt-8">
+                        <button type="button" class="back-btn bg-gray-200 text-gray-700 font-semibold py-2 px-6 rounded-lg hover:bg-gray-300 transition">&larr; Back</button>
+                        <button type="button" class="next-btn bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">Next &rarr;</button>
+                    </div>
+                </div>
+
+                <!-- Step 3: Academics -->
+                <div id="step-3" class="step">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-2">How are your grades?</h2>
+                    <p class="text-gray-600 mb-6">Rate your general performance in these core subject areas. This helps us match your academic strengths.</p>
+                    <div class="space-y-6">
+                        <div class="academic-subject">
+                            <label for="math-science" class="block text-md font-medium text-gray-700">Math & Sciences (Physics, Chemistry, Biology)</label>
+                            <select id="math-science" name="math-science" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <option>Excellent (85% or above)</option>
+                                <option>Good (70% - 84%)</option>
+                                <option selected>Average (50% - 69%)</option>
+                                <option>Needs Improvement (Below 50%)</option>
+                            </select>
+                        </div>
+                        <div class="academic-subject">
+                            <label for="humanities" class="block text-md font-medium text-gray-700">Arts & Humanities (History, Literature, Social Studies)</label>
+                            <select id="humanities" name="humanities" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <option>Excellent (85% or above)</option>
+                                <option>Good (70% - 84%)</option>
+                                <option selected>Average (50% - 69%)</option>
+                                <option>Needs Improvement (Below 50%)</option>
+                            </select>
+                        </div>
+                         <div class="academic-subject">
+                            <label for="tech-practical" class="block text-md font-medium text-gray-700">Technology & Practical Skills (Computers, Crafts, Business)</label>
+                            <select id="tech-practical" name="tech-practical" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <option>Excellent (85% or above)</option>
+                                <option>Good (70% - 84%)</option>
+                                <option selected>Average (50% - 69%)</option>
+                                <option>Needs Improvement (Below 50%)</option>
+                            </select>
+                        </div>
+                    </div>
+                     <div class="flex justify-between mt-8">
+                        <button type="button" class="back-btn bg-gray-200 text-gray-700 font-semibold py-2 px-6 rounded-lg hover:bg-gray-300 transition">&larr; Back</button>
+                        <button type="button" class="next-btn bg-indigo-600 text-white font-semibold py-2 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">Next &rarr;</button>
+                    </div>
+                </div>
+                
+                <!-- Step 4: Context -->
+                <div id="step-4" class="step">
+                    <h2 class="text-2xl font-semibold text-gray-800 mb-2">Tell us about your situation.</h2>
+                    <p class="text-gray-600 mb-6">Your location and financial background are important factors in planning your career path.</p>
+                    <div class="space-y-6">
+                        <div>
+                             <label for="location" class="block text-md font-medium text-gray-700">Where do you live? (City, Country)</label>
+                             <input type="text" id="location" name="location" placeholder="e.g., Mumbai, India" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                        </div>
+                        <div>
+                             <label for="financial" class="block text-md font-medium text-gray-700">What's your family's financial situation regarding education?</label>
+                            <select id="financial" name="financial" class="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
+                                <option>Can afford long-term, expensive degrees (e.g., Medicine, Overseas study).</option>
+                                <option selected>Can afford standard college degrees, but cost is a factor.</option>
+                                <option>Prefer shorter courses or diplomas with quick job prospects.</option>
+                                <option>Need to "earn while you learn" through part-time work or vocational training.</option>
+                            </select>
+                        </div>
+                    </div>
+                     <div class="flex justify-between mt-8">
+                        <button type="button" class="back-btn bg-gray-200 text-gray-700 font-semibold py-2 px-6 rounded-lg hover:bg-gray-300 transition">&larr; Back</button>
+                        <button type="submit" class="bg-emerald-500 text-white font-bold py-2 px-6 rounded-lg hover:bg-emerald-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition">Get My Guidance</button>
+                    </div>
+                </div>
+            </form>
+
+            <!-- Results Section -->
+            <div id="results-section" class="hidden">
+                 <div id="loading" class="text-center py-10">
+                    <div class="loader mx-auto"></div>
+                    <p class="mt-4 text-lg text-gray-600">Analyzing your profile and consulting the cosmos...</p>
+                    <p class="text-sm text-gray-500">This may take a moment.</p>
+                </div>
+                <div id="results-content" class="hidden">
+                    <h2 class="text-3xl font-bold text-gray-800 mb-2 text-center">Your Personalized Career Recommendations</h2>
+                    <p class="text-gray-600 mb-8 text-center">Based on your profile, here are a few paths that could be a great fit for you.</p>
+                    <div id="results-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <!-- Career cards will be inserted here -->
+                    </div>
+                     <div class="text-center mt-10">
+                        <button id="restart-btn" class="bg-indigo-600 text-white font-semibold py-2 px-8 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition">
+                            Start Over
+                        </button>
+                    </div>
+                </div>
+                 <div id="error-message" class="hidden text-center py-10">
+                    <svg class="mx-auto h-12 w-12 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <h3 class="mt-2 text-lg font-medium text-red-800">Oops! Something went wrong.</h3>
+                    <p class="mt-1 text-sm text-red-700">We couldn't generate your career guidance right now. Please try again later.</p>
+                 </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- STATE MANAGEMENT ---
+            let currentStep = 1;
+            const totalSteps = 4;
+            const formData = {
+                interests: [],
+                academics: {},
+                location: '',
+                financial: '',
+            };
+
+            // --- DOM ELEMENTS ---
+            const steps = document.querySelectorAll('.step');
+            const guidanceForm = document.getElementById('guidance-form');
+            const resultsSection = document.getElementById('results-section');
+            const loadingIndicator = document.getElementById('loading');
+            const resultsContent = document.getElementById('results-content');
+            const resultsGrid = document.getElementById('results-grid');
+            const errorDisplay = document.getElementById('error-message');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const restartBtn = document.getElementById('restart-btn');
+
+            // --- INTERESTS SETUP ---
+            const interests = [
+                'Solving Puzzles', 'Helping People', 'Being Creative', 'Working with Technology',
+                'Nature & Outdoors', 'Building Things', 'Leading Teams', 'Research & Analysis',
+                'Writing & Storytelling', 'Public Speaking', 'Hands-on Work', 'Music & Performing Arts',
+                'Business & Finance', 'Science Experiments', 'Gaming', 'Health & Wellness'
+            ];
+
+            const interestsContainer = document.getElementById('interests-container');
+            interests.forEach(interest => {
+                const tag = document.createElement('button');
+                tag.type = 'button';
+                tag.textContent = interest;
+                tag.className = 'interest-tag cursor-pointer bg-gray-100 text-gray-700 font-medium py-2 px-4 rounded-full hover:bg-indigo-100';
+                tag.addEventListener('click', () => toggleInterest(tag, interest));
+                interestsContainer.appendChild(tag);
+            });
+
+            function toggleInterest(tagElement, interest) {
+                tagElement.classList.toggle('selected');
+                if (tagElement.classList.contains('selected')) {
+                    if (!formData.interests.includes(interest)) {
+                        formData.interests.push(interest);
+                    }
+                } else {
+                    formData.interests = formData.interests.filter(i => i !== interest);
+                }
+            }
+
+            // --- NAVIGATION LOGIC ---
+            function updateProgressBar() {
+                const progress = (currentStep / totalSteps) * 100;
+                progressBar.style.width = `${progress}%`;
+                progressText.textContent = `Step ${currentStep} of ${totalSteps}`;
+            }
+
+            function showStep(stepNumber) {
+                steps.forEach(step => step.classList.remove('active'));
+                const nextStepElement = document.getElementById(`step-${stepNumber}`);
+                if(nextStepElement) {
+                    nextStepElement.classList.add('active');
+                }
+                currentStep = stepNumber;
+                updateProgressBar();
+            }
+
+            document.querySelectorAll('.next-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    if (currentStep < totalSteps) {
+                        showStep(currentStep + 1);
+                    }
+                });
+            });
+
+            document.querySelectorAll('.back-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    if (currentStep > 1) {
+                        showStep(currentStep - 1);
+                    }
+                });
+            });
+
+            // --- FORM SUBMISSION ---
+            guidanceForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                // Collect final data
+                formData.academics = {
+                    mathScience: document.getElementById('math-science').value,
+                    humanities: document.getElementById('humanities').value,
+                    techPractical: document.getElementById('tech-practical').value
+                };
+                formData.location = document.getElementById('location').value.trim();
+                formData.financial = document.getElementById('financial').value;
+
+                // Basic validation
+                if (formData.interests.length === 0) {
+                    alert('Please select at least one interest.');
+                    showStep(2);
+                    return;
+                }
+                if (!formData.location) {
+                    alert('Please enter your location.');
+                     showStep(4);
+                    return;
+                }
+
+                // Show loading state
+                guidanceForm.style.display = 'none';
+                document.getElementById('progress-container').style.display = 'none';
+                resultsSection.style.display = 'block';
+                loadingIndicator.style.display = 'block';
+                resultsContent.style.display = 'none';
+                errorDisplay.style.display = 'none';
+
+                await generateGuidance();
+            });
+
+            // --- AI GUIDANCE GENERATION ---
+            async function generateGuidance() {
+                // This is where you would call the Gemini API.
+                // NOTE: An API key is required. For this example, we are using a mock call.
+                const apiKey = ""; // IMPORTANT: Leave empty for Canvas auto-provisioning
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                const prompt = `
+                    You are "CareerFit AI", an expert career counselor for students.
+                    Analyze the following student profile and suggest 3 to 5 highly relevant career paths.
+                    
+                    **Student Profile:**
+                    - Interests: ${formData.interests.join(', ')}
+                    - Academic Performance:
+                      - Math & Sciences: ${formData.academics.mathScience}
+                      - Arts & Humanities: ${formData.academics.humanities}
+                      - Technology & Practical Skills: ${formData.academics.techPractical}
+                    - Location: ${formData.location}
+                    - Financial Consideration: ${formData.financial}
+                    
+                    **Instructions:**
+                    For each suggested career, provide a JSON object with the following keys:
+                    - "career_title": (string) The name of the career.
+                    - "fit_reason": (string) A concise, encouraging explanation (2-3 sentences) of WHY this career is a great fit based on the student's specific profile. Mention their interests and academic strengths.
+                    - "required_education": (string) The typical educational path required (e.g., "Bachelor's Degree in Computer Science", "Vocational Training Diploma", "Master's Degree").
+                    - "local_relevance": (string) A brief note on the career's relevance or opportunities in or near the student's provided location.
+                    
+                    Return ONLY a valid JSON array of these objects, with no other text before or after the array.
+                `;
+
+                const payload = {
+                    contents: [{
+                        parts: [{ text: prompt }]
+                    }]
+                };
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`API Error: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        
+                        // The API sometimes returns the JSON wrapped in a markdown code block.
+                        // We need to clean this up before parsing.
+                        let jsonString = result.candidates[0].content.parts[0].text;
+                        if (jsonString.startsWith("```json")) {
+                            jsonString = jsonString.substring(7, jsonString.length - 3).trim();
+                        } else if (jsonString.startsWith("```")) {
+                            jsonString = jsonString.substring(3, jsonString.length - 3).trim();
+                        }
+                        
+                        const careerData = JSON.parse(jsonString);
+                        displayResults(careerData);
+                    } else {
+                        throw new Error("Invalid response structure from API.");
+                    }
+                } catch (error) {
+                    console.error("Error fetching or parsing guidance:", error);
+                    showError();
+                }
+            }
+            
+            // --- DISPLAY RESULTS ---
+            function displayResults(careerData) {
+                loadingIndicator.style.display = 'none';
+                resultsGrid.innerHTML = ''; // Clear previous results
+
+                careerData.forEach(career => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-white border border-gray-200 p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300 flex flex-col';
+                    card.innerHTML = `
+                        <h3 class="text-xl font-bold text-indigo-700 mb-2">${career.career_title}</h3>
+                        <p class="text-sm text-gray-600 mb-4 flex-grow"><strong class="font-semibold text-gray-800">Why it's a fit:</strong> ${career.fit_reason}</p>
+                        <div class="mt-auto pt-4 border-t border-gray-100">
+                           <p class="text-sm text-gray-800 mb-2"><strong class="font-medium">🎓 Education:</strong> ${career.required_education}</p>
+                           <p class="text-sm text-gray-800"><strong class="font-medium">📍 Local Outlook:</strong> ${career.local_relevance}</p>
+                        </div>
+                    `;
+                    resultsGrid.appendChild(card);
+                });
+                
+                resultsContent.style.display = 'block';
+            }
+
+            function showError() {
+                loadingIndicator.style.display = 'none';
+                errorDisplay.style.display = 'block';
+            }
+            
+            // --- RESTART LOGIC ---
+            restartBtn.addEventListener('click', () => {
+                // Reset state
+                currentStep = 1;
+                formData.interests = [];
+                
+                // Reset UI
+                guidanceForm.reset();
+                document.querySelectorAll('.interest-tag.selected').forEach(tag => tag.classList.remove('selected'));
+                
+                resultsSection.style.display = 'none';
+                resultsContent.style.display = 'none';
+                errorDisplay.style.display = 'none';
+                
+                guidanceForm.style.display = 'block';
+                document.getElementById('progress-container').style.display = 'block';
+                
+                showStep(1);
+            });
+
+            // Initial call
+            showStep(1);
+        });
+    </script>
+
+</body>
+</html>
